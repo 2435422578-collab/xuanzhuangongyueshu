@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="game-version" content="2026-11-17-difficulty-v2" />
 <title>旋转公约数 · 模拟试玩</title>
 <style>
   :root{--bg:#0b1020;--panel:#131b31;--ink:#eef3ff;--muted:#98a8c8;--accent:#ff4d4d;--accent2:#ff9f43;--line:#2c3b61;--good:#36d399}
@@ -21,19 +22,47 @@
 </main>
 <script>
 const boardEl=document.querySelector('#board'),statusEl=document.querySelector('#status'),timerEl=document.querySelector('#timer'),movesEl=document.querySelector('#moves');
-const levels={easy:{size:5,range:'50以下',divisors:[31,37,41,43,47]},normal:{size:6,range:'50—100',divisors:[53,59,61,67,71,73]},hard:{size:7,range:'100—200',divisors:[101,111,125,137,143,149,151]}};
+const levels={
+easy:{size:5,range:'50以下',divisors:[5,7,11],steps:[2,4],hints:true,description:'低难度：3类数字，轻度打乱，保留较完整的区域，默认显示分类。'},
+normal:{size:6,range:'50—100',divisors:[53,59,61,67,71,73],steps:[20,40],hints:false,description:'中难度：6类数字，中度分散，默认隐藏分类。'},
+hard:{size:7,range:'100—200',divisors:[103,107,109,113,127,131,137],steps:[110,150],hints:false,description:'高难度：7类数字，充分打散，开局没有完整类别区域，默认隐藏分类。'}
+};
 let currentLevel='normal',divisors=[],pools=[];
 const categoryColors=['#45e6bd','#62b5ff','#d392ff','#ffca68','#ff86b6','#a9e56b','#b4a4ff'];
-function configure(level){currentLevel=level;const config=levels[level];rows=cols=config.size;divisors=[...config.divisors];pools=divisors.map(d=>Array.from({length:900},(_,i)=>100+i).filter(n=>n%d===0&&divisors.filter(v=>n%v===0).length===1));document.querySelector('.hint').textContent='分类除数范围：'+config.range+'。每个数字只属于本题一个分类；其他普通因数不作为分类依据。';}
+function configure(level){currentLevel=level;const config=levels[level];rows=cols=config.size;divisors=[...config.divisors];pools=divisors.map(d=>Array.from({length:900},(_,i)=>100+i).filter(n=>n%d===0&&divisors.filter(v=>n%v===0).length===1));showCategories=config.hints;document.querySelector('#categories').textContent=showCategories?'隐藏分类':'显示分类';document.querySelector('.notice').textContent=config.description+' 可以用“显示分类”切换辅助提示；答案与自动解答仅供练习。';document.querySelector('.hint').textContent='分类除数范围：'+config.range+'。每个数字只属于本题一个分类；其他普通因数不作为分类依据。';}
 let rows=6,cols=6,state=[],initial=[],history=[],moves=0,running=false,startAt=0,tick=null;
 let solved=[],showCategories=true,scramblePath=[],playerPath=[],busy=false,autoSolving=false;
 configure(currentLevel);
 function build(){let counts=divisors.map(()=>0);for(let n=0;n<rows*cols;n++){let options=counts.map((v,i)=>i).filter(i=>counts[i]<pools[i].length);let min=Math.min(...options.map(i=>counts[i]));let i=options.find(i=>counts[i]===min);counts[i]++}
-let cells=[];counts.forEach((count,cls)=>{let pool=[...pools[cls]].sort(()=>Math.random()-.5);for(let i=0;i<count;i++)cells.push({n:pool[i],cls})});
+let cells=[];counts.forEach((count,cls)=>{let pool=[...pools[cls]];for(let i=pool.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[pool[i],pool[j]]=[pool[j],pool[i]];}for(let i=0;i<count;i++)cells.push({n:pool[i],cls})});
 state=Array(rows*cols);cells.forEach((x,i)=>{let r=Math.floor(i/cols),c=i%cols;state[r*cols+(r%2?cols-1-c:c)]=x});
 solved=structuredClone(state);scramblePath=[];playerPath=[];
-do{for(let i=0;i<rows*cols;i++){const r=Math.floor(Math.random()*(rows-1)),c=Math.floor(Math.random()*(cols-1));rotate(r,c,false);scramblePath.push([r,c]);}}while(divisors.every((_,i)=>connected(i)));
+scrambleForDifficulty();
 initial=structuredClone(state);history=[];moves=0;render()}
+// Grade actual category fragmentation, rather than treating a bigger board as harder.
+function difficultyMetrics(){
+const seen=new Set(),components=divisors.map(()=>[]);let adjacentPairs=0;
+for(let i=0;i<state.length;i++){const r=Math.floor(i/cols),c=i%cols;if(c+1<cols&&state[i].cls===state[i+1].cls)adjacentPairs++;if(r+1<rows&&state[i].cls===state[i+cols].cls)adjacentPairs++;if(seen.has(i))continue;const cls=state[i].cls,stack=[i];seen.add(i);let count=0;while(stack.length){const j=stack.pop(),rr=Math.floor(j/cols),cc=j%cols;count++;for(const [dr,dc]of [[1,0],[-1,0],[0,1],[0,-1]]){const nr=rr+dr,nc=cc+dc,k=nr*cols+nc;if(nr>=0&&nr<rows&&nc>=0&&nc<cols&&!seen.has(k)&&state[k].cls===cls){seen.add(k);stack.push(k)}}}components[cls].push(count);}
+return {excess:components.reduce((n,a)=>n+a.length-1,0),largestShare:components.reduce((n,a)=>n+Math.max(...a),0)/state.length,complete:components.filter(a=>a.length===1).length,minComponents:Math.min(...components.map(a=>a.length)),adjacentPairs};
+}
+function matchesDifficulty(m){
+if(currentLevel==='easy')return m.excess>=1&&m.excess<=6&&m.largestShare>=.76&&m.complete>=1;
+if(currentLevel==='normal')return m.excess>=12&&m.excess<=21&&m.largestShare>=.35&&m.largestShare<=.65&&m.complete<=1;
+return m.excess>=30&&m.largestShare<=.34&&m.minComponents>=4&&m.complete===0;
+}
+function scrambleForDifficulty(){
+const config=levels[currentLevel];
+for(let attempt=0;attempt<300;attempt++){
+state=structuredClone(solved);scramblePath=[];
+const steps=config.steps[0]+Math.floor(Math.random()*(config.steps[1]-config.steps[0]+1));
+for(let step=0;step<steps;step++){
+const candidates=[];for(let r=0;r<rows-1;r++)for(let c=0;c<cols-1;c++){const p=r*cols+c,last=scramblePath.at(-1);if(last&&last[0]===r&&last[1]===c)continue;if(new Set([state[p].cls,state[p+1].cls,state[p+cols].cls,state[p+cols+1].cls]).size>1)candidates.push([r,c]);}
+const [r,c]=candidates[Math.floor(Math.random()*candidates.length)];rotate(r,c,false);scramblePath.push([r,c]);
+}
+if(matchesDifficulty(difficultyMetrics()))return;
+}
+throw new Error('暂未生成符合难度的盘面，请重新换题。');
+}
 function rotate(r,c,record=true){if(record&&!running)return;let p=r*cols+c,q=p+1,s=p+cols,t=s+1;[state[p],state[q],state[t],state[s]]=[state[s],state[p],state[q],state[t]];if(record){history.push(structuredClone(state));moves++;check();render()}}
 function render(){boardEl.style.gridTemplateColumns='repeat('+cols+',1fr)';boardEl.innerHTML='';const completed=divisors.map((_,i)=>connected(i));state.forEach((x,index)=>{let el=document.createElement('div');el.className='cell';let number=document.createElement('span');number.textContent=x.n;number.style.position='relative';number.style.zIndex='1';el.appendChild(number);if(completed[x.cls]){const color=categoryColors[x.cls%categoryColors.length],r=Math.floor(index/cols),c=index%cols;el.style.background='transparent';el.style.borderColor='transparent';el.style.borderRadius='0';const region=document.createElement('div');region.style.cssText='position:absolute;inset:-4.5px;pointer-events:none;background:'+color+'22;';const edges=[['Top',r>0?index-cols:-1],['Bottom',r<rows-1?index+cols:-1],['Left',c>0?index-1:-1],['Right',c<cols-1?index+1:-1]];for(const [side,neighbor] of edges){region.style['border'+side]=(neighbor>=0&&state[neighbor].cls===x.cls)?'none':'3px solid '+color;}el.appendChild(region);}let mini=document.createElement('span');mini.className='mini';mini.hidden=!showCategories;mini.style.zIndex='1';mini.textContent='类 '+(x.cls+1);if(completed[x.cls])mini.style.color=categoryColors[x.cls%categoryColors.length];el.appendChild(mini);boardEl.appendChild(el)});
 for(let r=0;r<rows-1;r++)for(let c=0;c<cols-1;c++){let b=document.createElement('button');b.className='rotate-button';b.textContent='↻';b.disabled=!running;b.title='周围四格顺时针旋转90°';b.setAttribute('aria-label','旋转第'+(r+1)+'行第'+(c+1)+'列交点');b.style.left='calc('+((c+1)/cols*100)+'% + '+(((c+1)/cols-.5)*7)+'px)';b.style.top='calc('+((r+1)/rows*100)+'% + '+(((r+1)/rows-.5)*7)+'px)';b.onclick=()=>animatedRotate(r,c);boardEl.appendChild(b)}
