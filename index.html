@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<meta name="game-version" content="2026-11-17-difficulty-v2" />
+<meta name="game-version" content="2026-11-17-difficulty-v3" />
 <title>旋转公约数 · 模拟试玩</title>
 <style>
   :root{--bg:#0b1020;--panel:#131b31;--ink:#eef3ff;--muted:#98a8c8;--accent:#ff4d4d;--accent2:#ff9f43;--line:#2c3b61;--good:#36d399}
@@ -23,13 +23,13 @@
 <script>
 const boardEl=document.querySelector('#board'),statusEl=document.querySelector('#status'),timerEl=document.querySelector('#timer'),movesEl=document.querySelector('#moves');
 const levels={
-easy:{size:5,range:'50以下',divisors:[5,7,11],steps:[2,4],hints:true,description:'低难度：3类数字，轻度打乱，保留较完整的区域，默认显示分类。'},
-normal:{size:6,range:'50—100',divisors:[53,59,61,67,71,73],steps:[20,40],hints:false,description:'中难度：6类数字，中度分散，默认隐藏分类。'},
+easy:{size:5,range:'50以下',minNumber:10,maxNumber:99,divisors:[7,11,13,17,19],steps:[4,7],hints:true,description:'低难度：5类，全为两位数，默认显示分类。每类开局都未完成；保留部分同类相邻块，便于整理。'},
+normal:{size:6,range:'50—100',divisors:[53,59,61,67,71,73],steps:[20,40],hints:false,description:'中难度：6类三位数，中度分散，开局无完整类别，默认隐藏分类。'},
 hard:{size:7,range:'100—200',divisors:[103,107,109,113,127,131,137],steps:[110,150],hints:false,description:'高难度：7类数字，充分打散，开局没有完整类别区域，默认隐藏分类。'}
 };
 let currentLevel='normal',divisors=[],pools=[];
 const categoryColors=['#45e6bd','#62b5ff','#d392ff','#ffca68','#ff86b6','#a9e56b','#b4a4ff'];
-function configure(level){currentLevel=level;const config=levels[level];rows=cols=config.size;divisors=[...config.divisors];pools=divisors.map(d=>Array.from({length:900},(_,i)=>100+i).filter(n=>n%d===0&&divisors.filter(v=>n%v===0).length===1));showCategories=config.hints;document.querySelector('#categories').textContent=showCategories?'隐藏分类':'显示分类';document.querySelector('.notice').textContent=config.description+' 可以用“显示分类”切换辅助提示；答案与自动解答仅供练习。';document.querySelector('.hint').textContent='分类除数范围：'+config.range+'。每个数字只属于本题一个分类；其他普通因数不作为分类依据。';}
+function configure(level){currentLevel=level;const config=levels[level];rows=cols=config.size;divisors=[...config.divisors];const min=config.minNumber??100,max=config.maxNumber??999;pools=divisors.map(d=>Array.from({length:max-min+1},(_,i)=>min+i).filter(n=>n%d===0&&divisors.filter(v=>n%v===0).length===1));showCategories=config.hints;document.querySelector('#categories').textContent=showCategories?'隐藏分类':'显示分类';document.querySelector('.notice').textContent=config.description+' 可以用“显示分类”切换辅助提示；答案与自动解答仅供练习。';document.querySelector('.hint').textContent='分类除数范围：'+config.range+'。每个数字只属于本题一个分类；其他普通因数不作为分类依据。';}
 let rows=6,cols=6,state=[],initial=[],history=[],moves=0,running=false,startAt=0,tick=null;
 let solved=[],showCategories=true,scramblePath=[],playerPath=[],busy=false,autoSolving=false;
 configure(currentLevel);
@@ -46,8 +46,8 @@ for(let i=0;i<state.length;i++){const r=Math.floor(i/cols),c=i%cols;if(c+1<cols&
 return {excess:components.reduce((n,a)=>n+a.length-1,0),largestShare:components.reduce((n,a)=>n+Math.max(...a),0)/state.length,complete:components.filter(a=>a.length===1).length,minComponents:Math.min(...components.map(a=>a.length)),adjacentPairs};
 }
 function matchesDifficulty(m){
-if(currentLevel==='easy')return m.excess>=1&&m.excess<=6&&m.largestShare>=.76&&m.complete>=1;
-if(currentLevel==='normal')return m.excess>=12&&m.excess<=21&&m.largestShare>=.35&&m.largestShare<=.65&&m.complete<=1;
+if(currentLevel==='easy')return m.excess>=5&&m.excess<=9&&m.largestShare>=.60&&m.complete===0;
+if(currentLevel==='normal')return m.excess>=12&&m.excess<=21&&m.largestShare>=.35&&m.largestShare<=.65&&m.complete===0;
 return m.excess>=30&&m.largestShare<=.34&&m.minComponents>=4&&m.complete===0;
 }
 function scrambleForDifficulty(){
